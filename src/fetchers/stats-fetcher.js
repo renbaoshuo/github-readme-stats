@@ -26,10 +26,11 @@ const fetcher = (variables, token) => {
           name
           login
           contributionsCollection {
+            contributionYears
             totalCommitContributions
             restrictedContributionsCount
           }
-          repositoriesContributedTo(first: 1, contributionTypes: [COMMIT, ISSUE, PULL_REQUEST, REPOSITORY]) {
+          repositoriesContributedTo(includeUserRepositories: true) {
             totalCount
           }
           pullRequests(first: 1) {
@@ -63,39 +64,58 @@ const fetcher = (variables, token) => {
   );
 };
 
-// https://github.com/anuraghazra/github-readme-stats/issues/92#issuecomment-661026467
-// https://github.com/anuraghazra/github-readme-stats/pull/211/
-const totalCommitsFetcher = async (username) => {
-  if (!githubUsernameRegex.test(username)) {
-    logger.log("Invalid username");
-    return 0;
-  }
+/**
+ * @param {any} variables
+ * @param {string} token
+ */
+const allCommitsFetcher = async (variables, token) => {
+  // FETCH ALL COMMITS
+  const commitPromises = variables.contributionYears.map(async (year) => {
+    // Don't fetch contributions older than 2008 (Perf optimization)
+    if (year < 2008) {
+      return {
+        user: { contributionsCollection: { totalCommitContributions: 0 } },
+      };
+    }
 
-  // https://developer.github.com/v3/search/#search-commits
-  const fetchTotalCommits = (variables, token) => {
-    return axios({
-      method: "get",
-      url: `https://api.github.com/search/commits?q=author:${variables.login}`,
+    const currentDate = new Date();
+    currentDate.setFullYear(year, 0, 0);
+
+    const res = await axios({
+      url: "https://api.github.com/graphql",
+      method: "post",
       headers: {
-        "Content-Type": "application/json",
-        Accept: "application/vnd.github.cloak-preview",
-        Authorization: `token ${token}`,
+        Authorization: `bearer ${token}`,
+      },
+      data: {
+        query: `
+        query userInfo($login: String!, $from: DateTime!) {
+          user(login: $login) {
+            contributionsCollection(from: $from) {
+              totalCommitContributions
+            }
+          }
+        }
+      `,
+        variables: {
+          login: variables.login,
+          from: currentDate.toISOString(),
+        },
       },
     });
-  };
 
-  try {
-    let res = await retryer(fetchTotalCommits, { login: username });
-    let total_count = res.data.total_count;
-    if (!!total_count && !isNaN(total_count)) {
-      return res.data.total_count;
-    }
-  } catch (err) {
-    logger.log(err);
-  }
-  // just return 0 if there is something wrong so that
-  // we don't break the whole app
-  return 0;
+    return res.data.data;
+  });
+
+  const allCommits = await Promise.all(commitPromises);
+
+  const result = allCommits.reduce((preYear, currYear) => {
+    return (
+      preYear + currYear.user.contributionsCollection.totalCommitContributions
+    );
+  }, 0);
+
+  return { data: result };
 };
 
 /**
@@ -126,7 +146,8 @@ async function fetchStats(
   // parseArray() will always return an empty array even nothing was specified
   // and GraphQL would consider that empty arr as a valid value. Nothing will be
   // queried in that case as no affiliation is presented.
-  ownerAffiliations = ownerAffiliations.length > 0 ? ownerAffiliations : ["OWNER"];
+  ownerAffiliations =
+    ownerAffiliations.length > 0 ? ownerAffiliations : ["OWNER"];
   let res = await retryer(fetcher, { login: username, ownerAffiliations });
 
   if (res.data.errors) {
@@ -142,19 +163,25 @@ async function fetchStats(
   stats.name = user.name || user.login;
   stats.totalIssues = user.openIssues.totalCount + user.closedIssues.totalCount;
 
-  // normal commits
-  stats.totalCommits = user.contributionsCollection.totalCommitContributions;
-
   // if include_all_commits then just get that,
   // since totalCommitsFetcher already sends totalCommits no need to +=
   if (include_all_commits) {
-    stats.totalCommits = await totalCommitsFetcher(username);
-  }
+    stats.totalCommits = (
+      await retryer(allCommitsFetcher, {
+        login: username,
+        contributionYears:
+          res.data.data.user.contributionsCollection.contributionYears,
+      })
+    ).data;
+  } else {
+    // normal commits
+    stats.totalCommits = user.contributionsCollection.totalCommitContributions;
 
-  // if count_private then add private commits to totalCommits so far.
-  if (count_private) {
-    stats.totalCommits +=
-      user.contributionsCollection.restrictedContributionsCount;
+    // if count_private then add private commits to totalCommits so far.
+    if (count_private) {
+      stats.totalCommits +=
+        user.contributionsCollection.restrictedContributionsCount;
+    }
   }
 
   stats.totalPRs = user.pullRequests.totalCount;
