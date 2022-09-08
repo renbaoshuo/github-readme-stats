@@ -127,6 +127,9 @@ const statCardLocales = ({ name, apostrophe }) => {
       vi: "Tổng Số PR",
       se: "Totalt antal PR",
     },
+    "statcard.prsreviewed": {
+      en: "Total PRs Reviewed",
+    },
     "statcard.issues": {
       ar: "مجموع التحسينات",
       cn: "指出问题数（issue）",

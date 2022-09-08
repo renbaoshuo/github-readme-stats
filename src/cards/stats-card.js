@@ -58,6 +58,7 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
     totalCommits,
     totalIssues,
     totalPRs,
+    totalPRsReviewed,
     contributedTo,
     rank,
   } = stats;
@@ -118,18 +119,26 @@ const renderStatsCard = (stats = {}, options = { hide: [] }) => {
       value: totalCommits,
       id: "commits",
     },
-    prs: {
-      icon: icons.prs,
-      label: i18n.t("statcard.prs"),
-      value: totalPRs,
-      id: "prs",
-    },
     issues: {
       icon: icons.issues,
       label: i18n.t("statcard.issues"),
       value: totalIssues,
       id: "issues",
     },
+    prs: {
+      icon: icons.prs,
+      label: i18n.t("statcard.prs"),
+      value: totalPRs,
+      id: "prs",
+    },
+    prsreviewed: totalPRsReviewed
+      ? {
+          icon: icons.prsreviewed,
+          label: i18n.t("statcard.prsreviewed"),
+          value: totalPRsReviewed,
+          id: "prsreviewed",
+        }
+      : undefined,
     contribs: {
       icon: icons.contribs,
       label: i18n.t("statcard.contribs"),

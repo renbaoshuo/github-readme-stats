@@ -93,6 +93,8 @@ const allCommitsFetcher = async (variables, token) => {
           user(login: $login) {
             contributionsCollection(from: $from) {
               totalCommitContributions
+              totalPullRequestContributions
+              totalPullRequestReviewContributions
             }
           }
         }
@@ -109,11 +111,25 @@ const allCommitsFetcher = async (variables, token) => {
 
   const allCommits = await Promise.all(commitPromises);
 
-  const result = allCommits.reduce((preYear, currYear) => {
-    return (
-      preYear + currYear.user.contributionsCollection.totalCommitContributions
-    );
-  }, 0);
+  const result = allCommits.reduce(
+    (preYear, currYear) => ({
+      totalCommitContributions:
+        preYear.totalCommitContributions +
+        currYear.user.contributionsCollection.totalCommitContributions,
+      totalPullRequestContributions:
+        preYear.totalPullRequestContributions +
+        currYear.user.contributionsCollection.totalPullRequestContributions,
+      totalPullRequestReviewContributions:
+        preYear.totalPullRequestReviewContributions +
+        currYear.user.contributionsCollection
+          .totalPullRequestReviewContributions,
+    }),
+    {
+      totalCommitContributions: 0,
+      totalPullRequestContributions: 0,
+      totalPullRequestReviewContributions: 0,
+    },
+  );
 
   return { data: result };
 };
@@ -166,13 +182,14 @@ async function fetchStats(
   // if include_all_commits then just get that,
   // since totalCommitsFetcher already sends totalCommits no need to +=
   if (include_all_commits) {
-    stats.totalCommits = (
-      await retryer(allCommitsFetcher, {
-        login: username,
-        contributionYears:
-          res.data.data.user.contributionsCollection.contributionYears,
-      })
-    ).data;
+    const { data } = await retryer(allCommitsFetcher, {
+      login: username,
+      contributionYears:
+        res.data.data.user.contributionsCollection.contributionYears,
+    });
+
+    stats.totalCommits = data.totalCommitContributions;
+    stats.totalPRsReviewed = data.totalPullRequestReviewContributions;
   } else {
     // normal commits
     stats.totalCommits = user.contributionsCollection.totalCommitContributions;
